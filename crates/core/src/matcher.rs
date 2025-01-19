@@ -1,22 +1,26 @@
 use serde::Deserialize;
+use tracing::warn;
 
 use crate::source::Source;
 
-pub(crate) trait SourceMatcherTrait {
+pub(crate) trait SourceMatcher {
     fn matches(&self, resource: &Source) -> bool;
 }
 
 #[derive(Deserialize, Debug)]
 #[serde(tag = "type")]
-pub enum SourceMatcher {
+pub(crate) enum SourceMatcherEnum {
     #[serde(rename = "resource-name-keyword")]
-    ResourceNameKeywordMatcher(ResourceNameKeywordMatcher),
+    ResourceNameKeyword(ResourceNameKeywordMatcher),
+    #[serde(rename = "resource-name-regexp")]
+    ResourceNameRegexp(ResourceNameRegexpMatcher),
 }
 
-impl SourceMatcher {
-    pub fn matches(&self, source: &Source) -> bool {
+impl SourceMatcher for SourceMatcherEnum {
+    fn matches(&self, source: &Source) -> bool {
         match self {
-            SourceMatcher::ResourceNameKeywordMatcher(matcher) => matcher.matches(source),
+            SourceMatcherEnum::ResourceNameKeyword(matcher) => matcher.matches(source),
+            SourceMatcherEnum::ResourceNameRegexp(matcher) => matcher.matches(source),
         }
     }
 }
@@ -26,8 +30,27 @@ pub struct ResourceNameKeywordMatcher {
     pub keyword: String,
 }
 
-impl SourceMatcherTrait for ResourceNameKeywordMatcher {
+impl SourceMatcher for ResourceNameKeywordMatcher {
     fn matches(&self, source: &Source) -> bool {
         source.resource_name.contains(&self.keyword)
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ResourceNameRegexpMatcher {
+    pub regexp: String,
+}
+
+impl SourceMatcher for ResourceNameRegexpMatcher {
+    fn matches(&self, source: &Source) -> bool {
+        let re = regex::Regex::new(&self.regexp);
+        match re {
+            Ok(re) => re.is_match(&source.resource_name),
+            Err(_) => {
+                warn!("Invalid regexp: {}", &self.regexp);
+                warn!("It will be ignored. Please check your config file");
+                false
+            }
+        }
     }
 }
